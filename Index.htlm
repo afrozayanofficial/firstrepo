@@ -1,1 +1,571 @@
-<!DOCTYPE html> <html> <head> <title>First repository</title> </head> <body> <h1>Business Intelligence test</h1> </body> </html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Asteroid Dodger — HTML Game</title>
+<style>
+  :root{
+    --bg:#06121a;
+    --card:#0e2936;
+    --accent:#7de3ff;
+    --muted:#9fb7bf;
+  }
+  html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
+  body{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:
+      radial-gradient(1200px 600px at 10% 10%, rgba(125,227,255,0.06), transparent 8%),
+      radial-gradient(900px 400px at 90% 90%, rgba(125,227,255,0.03), transparent 6%),
+      var(--bg);
+    color:var(--muted);
+  }
+  .wrap{
+    width:min(920px,95vw);
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.03));
+    border-radius:14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    overflow:hidden;
+    display:grid;
+    grid-template-columns: 1fr 320px;
+    gap:0;
+  }
+  .game-area{
+    position:relative;
+    background:linear-gradient(180deg, #07121a, #031217);
+    padding:14px;
+  }
+  canvas{
+    display:block;
+    width:100%;
+    height:100%;
+    border-radius:8px;
+    background:linear-gradient(180deg, rgba(0,0,0,0.12), rgba(0,0,0,0.02));
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.4);
+  }
+  .sidebar{
+    padding:18px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.02));
+    border-left:1px solid rgba(255,255,255,0.02);
+  }
+  h1{margin:0;font-size:18px;color:var(--accent)}
+  p{margin:8px 0 14px;color:var(--muted);font-size:13px}
+  .stats{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .stat{
+    background:rgba(255,255,255,0.02);
+    border-radius:8px;
+    padding:10px;
+    min-width:120px;
+    text-align:center;
+  }
+  .stat .big{font-weight:700;color:#fff;font-size:20px}
+  .controls{margin-top:14px;display:flex;gap:8px;flex-direction:column}
+  button{
+    border:0;padding:10px;border-radius:8px;font-weight:600;background:linear-gradient(90deg,var(--accent),#8ef0ff);
+    color:#04303a;cursor:pointer;
+    box-shadow: 0 6px 18px rgba(13,46,54,0.25);
+  }
+  button.secondary{
+    background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.04);box-shadow:none;
+  }
+  small{display:block;margin-top:10px;color:#7aa3ad;font-size:12px}
+  .footer{position:absolute;left:14px;bottom:14px;color:#0e9fb5;font-size:12px}
+  @media (max-width:900px){
+    .wrap{grid-template-columns:1fr}
+    .sidebar{order:2}
+    .game-area{order:1}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap" role="application" aria-label="Asteroid Dodger game">
+    <div class="game-area">
+      <canvas id="game" width="760" height="500"></canvas>
+      <div class="footer">Use ← → or A D to move — touch/drag to play on mobile</div>
+    </div>
+    <div class="sidebar">
+      <h1>Asteroid Dodger</h1>
+      <p>Dodge incoming asteroids. Survive waves to increase difficulty. Collect occasional speed boosts. How long can you last?</p>
+
+      <div class="stats">
+        <div class="stat">
+          <div>Score</div>
+          <div id="score" class="big">0</div>
+        </div>
+        <div class="stat">
+          <div>Lives</div>
+          <div id="lives" class="big">3</div>
+        </div>
+        <div class="stat">
+          <div>Level</div>
+          <div id="level" class="big">1</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn">Start / Restart</button>
+        <button id="pauseBtn" class="secondary">Pause</button>
+        <button id="muteBtn" class="secondary">Mute</button>
+        <small>Tip: When the screen flashes, a boost appears — move into it to collect!</small>
+      </div>
+
+      <div style="margin-top:18px;">
+        <strong>How to play</strong>
+        <ul style="color:var(--muted);padding-left:18px">
+          <li>Move left/right to avoid asteroids.</li>
+          <li>Score rises over time and with each dodged wave.</li>
+          <li>Lose a life when hit. Game over at 0 lives.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+<script>
+/*
+  Asteroid Dodger
+  Single-file HTML/JS/CSS game using Canvas.
+  Controls: Left/Right arrow keys or A/D. Touch drag to move on mobile.
+*/
+
+(() => {
+  // Canvas setup
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  // logical resolution to keep consistent behavior across sizes
+  const W = canvas.width = 760;
+  const H = canvas.height = 500;
+
+  // UI elements
+  const scoreEl = document.getElementById('score');
+  const livesEl = document.getElementById('lives');
+  const levelEl = document.getElementById('level');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const muteBtn = document.getElementById('muteBtn');
+
+  // Game state
+  let running = false;
+  let paused = false;
+  let muted = false;
+  let lastTime = 0;
+  let spawnTimer = 0;
+  let spawnInterval = 1200; // ms
+  let asteroids = [];
+  let boosts = [];
+  let score = 0;
+  let level = 1;
+  let lives = 3;
+  let timeSinceStart = 0;
+
+  // Player
+  const player = {
+    x: W/2,
+    y: H - 60,
+    w: 36,
+    h: 52,
+    speed: 300, // px per sec
+    vx: 0
+  };
+
+  // Controls
+  const keys = {left:false,right:false};
+  let touching = false;
+
+  // Sounds (tiny beeps using WebAudio)
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  let audioCtx = null;
+  function beep(freq=440, duration=0.06, vol=0.05){
+    if(muted) return;
+    if(!audioCtx) audioCtx = new AudioContext();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    g.gain.value = vol;
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    o.stop(audioCtx.currentTime + duration + 0.02);
+  }
+
+  // Utility
+  function rand(min,max){ return Math.random()*(max-min)+min; }
+  function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+
+  // Asteroid factory
+  function spawnAsteroid(){
+    const size = Math.floor(rand(18,48));
+    const x = rand(size/2, W - size/2);
+    const speed = rand(70 + level*10, 140 + level*20);
+    const rot = rand(-0.08,0.08);
+    asteroids.push({x, y:-size, r:size/2, speed, rot, ang: rand(0,Math.PI*2)});
+  }
+
+  // Boost factory (rare)
+  function spawnBoost(){
+    const x = rand(40, W-40);
+    boosts.push({x, y:-20, w:22, h:22, speed:110, type:'speed', life:6000});
+  }
+
+  // Reset game
+  function reset(){
+    asteroids = [];
+    boosts = [];
+    score = 0;
+    level = 1;
+    lives = 3;
+    spawnInterval = 1200;
+    timeSinceStart = 0;
+    player.x = W/2;
+    player.speed = 300;
+    updateUI();
+  }
+
+  function updateUI(){
+    scoreEl.textContent = Math.floor(score);
+    livesEl.textContent = lives;
+    levelEl.textContent = level;
+  }
+
+  // Collision detection (circle vs triangle-ish player box)
+  function circleRectCollision(cx,cy,r, rx,ry,rw,rh){
+    // find closest point to circle center
+    const closestX = clamp(cx, rx, rx + rw);
+    const closestY = clamp(cy, ry, ry + rh);
+    const dx = cx - closestX;
+    const dy = cy - closestY;
+    return (dx*dx + dy*dy) < (r*r);
+  }
+
+  // Game loop
+  function loop(timestamp){
+    if(!running) return;
+    if(paused){
+      lastTime = timestamp;
+      requestAnimationFrame(loop);
+      return;
+    }
+    const dt = Math.min(40, timestamp - (lastTime || timestamp)) / 1000; // seconds
+    lastTime = timestamp;
+    timeSinceStart += dt*1000;
+
+    // Spawn logic
+    spawnTimer += dt*1000;
+    if(spawnTimer > spawnInterval){
+      spawnTimer = 0;
+      // spawn multiple asteroids based on level
+      const count = 1 + Math.min(4, Math.floor(level/2));
+      for(let i=0;i<count;i++) spawnAsteroid();
+      // occasionally spawn boost
+      if(Math.random() < 0.14) spawnBoost();
+      // gradually increase difficulty
+      if(Math.random() < 0.5) {
+        spawnInterval = Math.max(420, spawnInterval - 25);
+        level = 1 + Math.floor((1200 - spawnInterval)/120);
+      }
+    }
+
+    // input velocity
+    player.vx = 0;
+    if(keys.left) player.vx = -player.speed;
+    if(keys.right) player.vx = player.speed;
+
+    // update player
+    player.x += player.vx * dt;
+    player.x = clamp(player.x, player.w/2, W - player.w/2);
+
+    // update asteroids
+    for(let a of asteroids){
+      a.y += a.speed * dt;
+      a.ang += a.rot;
+    }
+    // update boosts
+    for(let b of boosts){
+      b.y += b.speed * dt;
+      b.life -= dt*1000;
+    }
+
+    // collisions: asteroids with player
+    for(let i = asteroids.length-1; i>=0; i--){
+      const a = asteroids[i];
+      if(circleRectCollision(a.x, a.y, a.r, player.x - player.w/2, player.y - player.h/2, player.w, player.h)){
+        // hit!
+        asteroids.splice(i,1);
+        lives--;
+        beep(120,0.12,0.09);
+        flashRed();
+        if(lives <= 0){
+          gameOver();
+          return;
+        }
+      }else if(a.y - a.r > H + 40){
+        // passed screen -> score
+        asteroids.splice(i,1);
+        score += 12 + level*3;
+        beep(880,0.03,0.02);
+      }
+    }
+
+    // collisions: boosts
+    for(let i = boosts.length-1; i>=0; i--){
+      const b = boosts[i];
+      if(b.life <= 0 || b.y - b.h > H + 40){
+        boosts.splice(i,1);
+        continue;
+      }
+      if(circleRectCollision(b.x, b.y, Math.max(b.w,b.h)/2, player.x - player.w/2, player.y - player.h/2, player.w, player.h)){
+        // collect
+        boosts.splice(i,1);
+        player.speed += 120; // temporary buff
+        score += 30;
+        beep(1500, 0.07, 0.06);
+        // buff lasts for 3 seconds
+        setTimeout(()=>{ player.speed = Math.max(300, player.speed - 120); }, 3000);
+      }
+    }
+
+    // passive score growth
+    score += dt * (5 + level*1.4);
+
+    // draw
+    render();
+
+    updateUI();
+    requestAnimationFrame(loop);
+  }
+
+  // Small screen flash effect on hit
+  let redFlash = 0;
+  function flashRed(){
+    redFlash = 0.9;
+    const tick = setInterval(()=>{
+      redFlash -= 0.08;
+      if(redFlash <= 0){ redFlash = 0; clearInterval(tick); }
+    }, 40);
+  }
+
+  // Render function
+  function render(){
+    // clear
+    ctx.clearRect(0,0,W,H);
+
+    // starfield background
+    drawStars();
+
+    // draw asteroids
+    for(let a of asteroids){
+      ctx.save();
+      ctx.translate(a.x, a.y);
+      ctx.rotate(a.ang);
+      // rocky asteroid with irregular polygon
+      ctx.beginPath();
+      const spikes = 6;
+      for(let i=0;i<spikes;i++){
+        const ang = (i/spikes)*Math.PI*2;
+        const rad = a.r * (0.7 + 0.35*Math.sin(ang*3 + a.ang*5 + i));
+        const px = Math.cos(ang)*rad;
+        const py = Math.sin(ang)*rad;
+        if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(-a.r,-a.r,a.r,a.r);
+      grad.addColorStop(0,'#6a5446');
+      grad.addColorStop(1,'#3b2b22');
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // draw boosts
+    for(let b of boosts){
+      ctx.save();
+      ctx.translate(b.x,b.y);
+      ctx.beginPath();
+      ctx.arc(0,0,Math.max(b.w,b.h)/2,0,Math.PI*2);
+      ctx.fillStyle = 'rgba(140,240,255,0.95)';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(0,80,90,0.9)';
+      ctx.stroke();
+      // lightning bolt icon
+      ctx.beginPath();
+      ctx.moveTo(-6,-6);
+      ctx.lineTo(2,-6);
+      ctx.lineTo(-2,6);
+      ctx.lineTo(6,6);
+      ctx.closePath();
+      ctx.fillStyle = '#04303a';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // draw player ship (triangle)
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    // glow
+    ctx.beginPath();
+    ctx.moveTo(0,-player.h/2 - 6);
+    ctx.lineTo(-player.w/2, player.h/2 + 6);
+    ctx.lineTo(player.w/2, player.h/2 + 6);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(125,227,255,0.04)';
+    ctx.fill();
+
+    // ship body
+    ctx.beginPath();
+    ctx.moveTo(0,-player.h/2);
+    ctx.lineTo(-player.w/2, player.h/2);
+    ctx.lineTo(player.w/2, player.h/2);
+    ctx.closePath();
+    ctx.fillStyle = '#8ef0ff';
+    ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = '#04303a';
+    ctx.stroke();
+
+    // cockpit
+    ctx.beginPath();
+    ctx.ellipse(0, -8, 8, 5, 0, 0, Math.PI*2);
+    ctx.fillStyle = '#04303a';
+    ctx.fill();
+    ctx.restore();
+
+    // HUD overlay
+    if(paused){
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(0,0,W,H);
+      ctx.fillStyle = '#9ff6ff';
+      ctx.font = '28px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('PAUSED', W/2, H/2 - 8);
+      ctx.font = '14px sans-serif';
+      ctx.fillText('Press Start or unpause to continue', W/2, H/2 + 18);
+    }
+
+    // red flash when hit
+    if(redFlash > 0){
+      ctx.fillStyle = `rgba(255,45,45,${redFlash*0.18})`;
+      ctx.fillRect(0,0,W,H);
+    }
+  }
+
+  // simple static starfield (re-draw every frame for parallax effect)
+  let seedStars = [];
+  for(let i=0;i<80;i++){
+    seedStars.push({x: Math.random()*W, y: Math.random()*H, s: Math.random()*1.6 + 0.2});
+  }
+  function drawStars(){
+    ctx.fillStyle = '#051017';
+    ctx.fillRect(0,0,W,H);
+    for(let st of seedStars){
+      ctx.beginPath();
+      ctx.arc(st.x, (st.y + (timeSinceStart*0.02*st.s))%H, st.s/1.4, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.fill();
+    }
+  }
+
+  // Game over
+  function gameOver(){
+    running = false;
+    paused = false;
+    beep(80,0.25,0.12);
+    render();
+    // big overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#fff';
+    ctx.font = '32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', W/2, H/2 - 10);
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = '#9fe9f5';
+    ctx.fillText(`Score: ${Math.floor(score)} | Level: ${level}`, W/2, H/2 + 20);
+  }
+
+  // Input handlers
+  window.addEventListener('keydown', (e)=>{
+    if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+    if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+    if(e.key === 'p' || e.key === 'P') togglePause();
+  });
+  window.addEventListener('keyup', (e)=>{
+    if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+    if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+  });
+
+  // Touch / pointer drag for mobile
+  let pointerDown = false;
+  canvas.addEventListener('pointerdown', (e)=>{
+    pointerDown = true;
+    touching = true;
+    movePlayerToPointer(e);
+  });
+  canvas.addEventListener('pointermove', (e)=>{
+    if(pointerDown) movePlayerToPointer(e);
+  });
+  canvas.addEventListener('pointerup', ()=>{ pointerDown = false; touching = false; keys.left=false; keys.right=false; });
+
+  function movePlayerToPointer(e){
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (W / rect.width);
+    // smooth move: set vx towards pointer
+    const dx = x - player.x;
+    if(Math.abs(dx) < 10) { keys.left = keys.right = false; return; }
+    keys.left = dx < 0;
+    keys.right = dx > 0;
+  }
+
+  // Buttons
+  startBtn.addEventListener('click', ()=>{
+    reset();
+    start();
+  });
+  pauseBtn.addEventListener('click', togglePause);
+  muteBtn.addEventListener('click', ()=>{
+    muted = !muted;
+    muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+  });
+
+  function start(){
+    running = true;
+    paused = false;
+    lastTime = 0;
+    // initial asteroids
+    for(let i=0;i<3;i++) spawnAsteroid();
+    requestAnimationFrame(loop);
+  }
+  function togglePause(){
+    if(!running) return;
+    paused = !paused;
+    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  }
+
+  // Auto-start a little demo so user sees something
+  (function demoStart(){
+    // draw initial frame
+    render();
+  })();
+
+  // expose some global for debugging (nice to inspect in console)
+  window._game = {
+    start, reset, getState: ()=>({score, lives, level, running})
+  };
+
+  // friendly quick keyboard hint when focus on page
+  window.addEventListener('blur', ()=>{ keys.left = keys.right = false; });
+
+})();
+</script>
+</body>
+</html>
